@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Divizzet – Divisão de contas do casal</title>
+<style>
+  :root { --bg:#f5f6fa; --card:#fff; --text:#1f2430; --muted:#6b7280; --a:#4f6df5; --b:#e8588a; --line:#e5e7eb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12141a; --card:#1c1f28; --text:#eceef4; --muted:#9aa1b2; --line:#2c303b; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:560px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.5rem; margin:8px 0 16px; }
+  h2 { font-size:1.05rem; margin:0 0 12px; }
+  .card { background:var(--card); border-radius:14px; padding:16px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  label { display:block; font-size:.85rem; color:var(--muted); margin-bottom:4px; }
+  input { width:100%; padding:10px 12px; font-size:1rem; border:1px solid var(--line); border-radius:10px; background:transparent; color:var(--text); }
+  input:focus { outline:2px solid var(--a); border-color:transparent; }
+  .row { display:flex; gap:10px; }
+  .row > div { flex:1; }
+  .expense { display:flex; gap:8px; margin-bottom:8px; }
+  .expense input:first-child { flex:2; }
+  .expense input:nth-child(2) { flex:1; min-width:0; }
+  button { font:inherit; cursor:pointer; border:0; border-radius:10px; padding:10px 14px; }
+  .ghost { background:transparent; color:var(--a); border:1px dashed var(--a); width:100%; }
+  .del { background:transparent; color:var(--muted); font-size:1.2rem; padding:0 8px; }
+  .primary { background:var(--a); color:#fff; width:100%; font-size:1.05rem; font-weight:600; padding:14px; }
+  .total { display:flex; justify-content:space-between; font-weight:600; margin-top:8px; }
+  .err { color:#dc2626; font-size:.9rem; margin-top:8px; min-height:1.2em; }
+  .bar { display:flex; height:14px; border-radius:7px; overflow:hidden; margin:8px 0 16px; }
+  .bar span { display:block; transition:width .3s; }
+  .person { display:flex; justify-content:space-between; align-items:baseline; padding:12px 0; border-top:1px solid var(--line); }
+  .person:first-of-type { border-top:0; }
+  .person b { font-size:1.4rem; }
+  .small { color:var(--muted); font-size:.85rem; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; margin-top:8px; }
+  th, td { text-align:right; padding:6px 4px; border-top:1px solid var(--line); }
+  th:first-child, td:first-child { text-align:left; }
+  th { color:var(--muted); font-weight:500; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>💑 Divizzet</h1>
+
+  <section class="card">
+    <h2>1. Salários</h2>
+    <div class="row">
+      <div><label for="n1">Nome</label><input id="n1" value="Ele"></div>
+      <div><label for="s1">Salário (R$)</label><input id="s1" type="number" inputmode="decimal" min="0" step="0.01" placeholder="4000"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div><label for="n2">Nome</label><input id="n2" value="Ela"></div>
+      <div><label for="s2">Salário (R$)</label><input id="s2" type="number" inputmode="decimal" min="0" step="0.01" placeholder="3000"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2. Gastos mensais</h2>
+    <div id="expenses"></div>
+    <button class="ghost" id="add" type="button">+ Adicionar gasto</button>
+    <div class="total"><span>Total</span><span id="total">R$ 0,00</span></div>
+  </section>
+
+  <button class="primary" id="calc" type="button">Calcular</button>
+  <div class="err" id="err" role="alert"></div>
+
+  <section class="card" id="result" hidden>
+    <h2>Resultado</h2>
+    <div class="bar"><span id="bar1" style="background:var(--a)"></span><span id="bar2" style="background:var(--b)"></span></div>
+    <div class="person"><div><div id="r1n"></div><div class="small" id="r1p"></div></div><b id="r1v" style="color:var(--a)"></b></div>
+    <div class="person"><div><div id="r2n"></div><div class="small" id="r2p"></div></div><b id="r2v" style="color:var(--b)"></b></div>
+    <p class="small" id="note"></p>
+    <table id="detail"></table>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const brl = v => v.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+const KEY = 'divizzet';
+
+// Divisão proporcional ao salário: cada um paga (seu salário / soma dos salários) de cada conta.
+function calcular(s1, s2, gastos) {
+  const soma = s1 + s2;
+  const p1 = s1 / soma, p2 = s2 / soma;
+  const total = gastos.reduce((t, g) => t + g.valor, 0);
+  return { p1, p2, total, v1: total * p1, v2: total * p2,
+           itens: gastos.map(g => ({ nome:g.nome, valor:g.valor, v1:g.valor * p1, v2:g.valor * p2 })) };
+}
+
+function addExpense(nome = '', valor = '') {
+  const d = document.createElement('div');
+  d.className = 'expense';
+  d.innerHTML = '<input placeholder="Ex: Financiamento" aria-label="Nome do gasto">' +
+    '<input type="number" inputmode="decimal" min="0" step="0.01" placeholder="0,00" aria-label="Valor">' +
+    '<button class="del" type="button" aria-label="Remover">✕</button>';
+  d.children[0].value = nome; d.children[1].value = valor;
+  d.children[2].onclick = () => { d.remove(); updateTotal(); save(); };
+  d.addEventListener('input', () => { updateTotal(); save(); });
+  $('expenses').appendChild(d);
+}
+
+function readExpenses() {
+  return [...document.querySelectorAll('.expense')].map(d => ({
+    nome: d.children[0].value.trim() || 'Sem nome',
+    valor: parseFloat(d.children[1].value) || 0
+  })).filter(g => g.valor > 0);
+}
+
+function updateTotal() {
+  $('total').textContent = brl(readExpenses().reduce((t, g) => t + g.valor, 0));
+}
+
+function save() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({
+      n1:$('n1').value, n2:$('n2').value, s1:$('s1').value, s2:$('s2').value,
+      gastos:[...document.querySelectorAll('.expense')].map(d => [d.children[0].value, d.children[1].value])
+    }));
+  } catch {}
+}
+
+function load() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(KEY)); } catch {}
+  if (d) {
+    $('n1').value = d.n1; $('n2').value = d.n2; $('s1').value = d.s1; $('s2').value = d.s2;
+    (d.gastos || []).forEach(g => addExpense(g[0], g[1]));
+  }
+  if (!document.querySelector('.expense')) ['Financiamento','Água','Energia','Internet'].forEach(n => addExpense(n));
+  updateTotal();
+}
+
+$('add').onclick = () => { addExpense(); document.querySelector('.expense:last-child input').focus(); };
+['n1','n2','s1','s2'].forEach(id => $(id).addEventListener('input', save));
+
+$('calc').onclick = () => {
+  const s1 = parseFloat($('s1').value), s2 = parseFloat($('s2').value);
+  const n1 = $('n1').value.trim() || 'Pessoa 1', n2 = $('n2').value.trim() || 'Pessoa 2';
+  const gastos = readExpenses();
+  $('err').textContent = '';
+  if (!(s1 >= 0) || !(s2 >= 0) || s1 + s2 <= 0) return fail('Informe os dois salários.');
+  if (!gastos.length) return fail('Informe pelo menos um gasto com valor.');
+  const r = calcular(s1, s2, gastos);
+  const pct = x => (x * 100).toFixed(1).replace('.', ',') + '%';
+  $('bar1').style.width = r.p1 * 100 + '%'; $('bar2').style.width = r.p2 * 100 + '%';
+  $('r1n').textContent = n1; $('r2n').textContent = n2;
+  $('r1p').textContent = pct(r.p1) + ' das contas'; $('r2p').textContent = pct(r.p2) + ' das contas';
+  $('r1v').textContent = brl(r.v1); $('r2v').textContent = brl(r.v2);
+  const maior = s1 >= s2 ? n1 : n2, dif = Math.abs(s1 - s2);
+  $('note').textContent = `Total de ${brl(r.total)}. ` + (dif ? `${maior} ganha ${brl(dif)} a mais e por isso paga uma parte maior.` : 'Salários iguais: divisão meio a meio.');
+  const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  $('detail').innerHTML = `<tr><th>Gasto</th><th>Total</th><th>${esc(n1)}</th><th>${esc(n2)}</th></tr>` +
+    r.itens.map(i => `<tr><td>${esc(i.nome)}</td><td>${brl(i.valor)}</td><td>${brl(i.v1)}</td><td>${brl(i.v2)}</td></tr>`).join('');
+  $('result').hidden = false;
+  $('result').scrollIntoView({ behavior:'smooth' });
+};
+function fail(m) { $('err').textContent = m; $('result').hidden = true; }
+
+load();
+</script>
+</body>
+</html>
